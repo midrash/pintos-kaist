@@ -27,6 +27,7 @@
         "fixed_point.h": "c",
         "gdt.h": "c",
         "tss.h": "c",
-        "lib.h": "c"
+        "lib.h": "c",
+        "syscall.h": "c"
     },
 }

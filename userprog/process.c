@@ -42,7 +42,6 @@ tid_t
 process_create_initd (const char *file_name) {
 	char *fn_copy;
 	tid_t tid;
-	printf("f_name은 무었일까요? :%s\n", file_name);
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
@@ -51,12 +50,11 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 	
-	char *token, *save_ptr;
-	file_name = strtok_r (file_name, " ", &save_ptr);
+	// char *token, *save_ptr;
+	// file_name = strtok_r (file_name, " ", &save_ptr);
 	
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
-	printf("tid는 무었일까요? :%d\n", tid);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -68,7 +66,6 @@ initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-	printf("initd 들어옴 : %s",f_name);
 	process_init ();
 
 	if (process_exec (f_name) < 0)
@@ -185,6 +182,9 @@ process_exec (void *f_name) {
 	/* And then load the binary */
 	success = load (file_name, &_if);
 
+    hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true); // user stack을 16진수로 프린트
+    // ~ Argument Passing
+
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
 	if (!success)
@@ -210,6 +210,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	while(true){}
 	return -1;
 }
 
@@ -335,6 +336,14 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 
+	// Argument Passing ~
+    char *parse[64];
+    char *token, *save_ptr;
+    int count = 0;
+    for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr))
+        parse[count++] = token;
+    // ~ Argument Passing
+
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -422,6 +431,12 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+
+	// Argument Passing ~
+    // argument_stack(parse, count, &_if.rsp); // 함수 내부에서 parse와 rsp의 값을 직접 변경하기 위해 주소 전달
+    argument_stack(parse, count, if_); // 함수 내부에서 parse와 rsp의 값을 직접 변경하기 위해 주소 전달
+    // _if.R.rdi = count;
+    // _if.R.rsi = (char *)_if.rsp + 8;
 
 	success = true;
 
@@ -643,3 +658,76 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 #endif /* VM */
+
+// void argument_stack(char **parse, int count, void **rsp) // 주소를 전달받았으므로 이중 포인터 사용
+// {
+//     // 프로그램 이름, 인자 문자열 push
+//     for (int i = count - 1; i > -1; i--)
+//     {
+//         for (int j = strlen(parse[i]); j > -1; j--)
+//         {
+//             (*rsp)--;                      // 스택 주소 감소
+//             **(char **)rsp = parse[i][j]; // 주소에 문자 저장
+//         }
+//         parse[i] = *(char **)rsp; // parse[i]에 현재 rsp의 값 저장해둠(지금 저장한 인자가 시작하는 주소값)
+//     }
+
+//     // 정렬 패딩 push
+//     int padding = (int)*rsp % 8;
+//     for (int i = 0; i < padding; i++)
+//     {
+//         (*rsp)--;
+//         **(uint8_t **)rsp = 0; // rsp 직전까지 값 채움
+//     }
+
+//     // 인자 문자열 종료를 나타내는 0 push
+//     (*rsp) -= 8;
+//     **(char ***)rsp = 0; // char* 타입의 0 추가
+
+//     // 각 인자 문자열의 주소 push
+//     for (int i = count - 1; i > -1; i--)
+//     {
+//         (*rsp) -= 8; // 다음 주소로 이동
+//         **(char ***)rsp = parse[i]; // char* 타입의 주소 추가
+//     }
+
+//     // return address push
+//     (*rsp) -= 8;
+//     **(void ***)rsp = 0; // void* 타입의 0 추가
+// }
+
+
+void argument_stack(char **parse, int count,struct intr_frame *if_) // 주소를 전달받았으므로 이중 포인터 사용
+{
+    // 프로그램 이름, 인자 문자열 push
+    for (int i = count - 1; i > -1; i--)
+    {
+		int argv_len = strlen(parse[i]);
+		if_->rsp = if_->rsp - (argv_len + 1);
+		memcpy(if_->rsp, parse[i], argv_len+1);
+        parse[i] = if_->rsp; // parse[i]에 현재 rsp의 값 저장해둠(지금 저장한 인자가 시작하는 주소값)
+    }
+
+    // 정렬 패딩 push
+    while (if_->rsp % 8 != 0) 
+	{
+		if_->rsp--; // 주소값을 1 내리고
+		*(uint8_t *) if_->rsp = 0; //데이터에 0 삽입 => 8바이트 저장
+	}
+
+    for (int i = count; i >=0; i--) 
+	{ // 여기서는 NULL 값 포인터도 같이 넣는다.
+		if_->rsp = if_->rsp - 8; // 8바이트만큼 내리고
+		if (i == count) { // 가장 위에는 NULL이 아닌 0을 넣어야지
+			memset(if_->rsp, 0, sizeof(char **));
+		} else { // 나머지에는 arg_address 안에 들어있는 값 가져오기
+			memcpy(if_->rsp, &parse[i], sizeof(char **)); // char 포인터 크기: 8바이트
+		}	
+	}
+
+	if_->rsp = if_->rsp - 8; // void 포인터도 8바이트 크기
+	memset(if_->rsp, 0, sizeof(void *));
+
+	if_->R.rdi  = count;
+	if_->R.rsi = if_->rsp + 8; // fake_address 바로 위: arg_address 맨 앞 가리키는 주소값!
+}

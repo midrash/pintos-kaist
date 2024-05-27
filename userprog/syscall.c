@@ -42,5 +42,75 @@ void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
 	printf ("system call!\n");
+	int sys_number = f->R.rax;
+	printf("시스템콜 번호 : %d\n",sys_number );
+	printf("agu1: %lld\n",f->R.rdi);
+	// printf("agu1: %lld\n",f->R.rdi);
+	// printf("agu2: %s\n",*(char**) f->R.rsi);
+	// printf("agu3: %s\n",*(char**) f->R.rdx);
+	switch(sys_number) {
+		case SYS_HALT:
+			halt();
+			break;
+		case SYS_EXIT:
+			exit(f->R.rdi);
+		// case SYS_FORK:
+		// 	fork(f->R.rdi);		
+		// case SYS_EXEC:
+		// 	exec(f->R.rdi);
+		// case SYS_WAIT:
+		// 	wait(f->R.rdi);
+		case SYS_CREATE:
+			create(f->R.rdi, f->R.rsi);		
+		case SYS_REMOVE:
+			remove(f->R.rdi);		
+		// case SYS_OPEN:
+		// 	open(f->R.rdi);		
+		// case SYS_FILESIZE:
+		// 	filesize(f->R.rdi);
+		// case SYS_READ:
+		// 	read(f->R.rdi, f->R.rsi, f->R.rdx);
+		// case SYS_WRITE:
+		// 	write(f->R.rdi, f->R.rsi, f->R.rdx);
+		// 	break;		
+		// case SYS_SEEK:
+		// 	seek(f->R.rdi, f->R.rsi);		
+		// case SYS_TELL:
+		// 	tell(f->R.rdi);		
+		// case SYS_CLOSE:
+		// 	close(f->R.rdi);
+		default:
+			printf("여기 올거같은데\n");
+			halt();
+			break;	
+	}
+
 	thread_exit ();
+}
+
+void check_address(void *addr){
+	struct thread* t = thread_current();
+	if(!is_user_vaddr(addr) || addr == NULL|| pml4_get_page(t->pml4, addr)== NULL){
+		thread_exit();
+	}
+}
+
+void
+halt (void) {
+	power_off();
+}
+
+void
+exit (int status) {
+	
+}
+
+bool
+create (const char *file, unsigned initial_size) {
+	return true;
+}
+
+bool
+remove (const char *file) {
+	return true;
 }
